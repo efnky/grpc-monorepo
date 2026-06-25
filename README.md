@@ -1,40 +1,33 @@
-# grpc-monorepo — two microservices in one repo
+# grpc-monorepo — two microservices in one repo (root-context)
 
-Two services in a single repository, to test whether komuta can deploy **multiple
-microservices from one repo** and let them talk to each other over **gRPC**.
+Two services from one repository, to test komuta's multi-service-from-one-repo
+deploy and **service-to-service gRPC**.
 
-```
-server/   gRPC server (Greeter.SayHello), listens on :50051   — its own Dockerfile
-client/   FastAPI HTTP service + gRPC client                   — its own Dockerfile
-```
+All source lives at the repo **root**; the two services differ only by which
+**Dockerfile** is selected (build context is always the repo root, so there is
+no per-service context to mis-assign):
 
-- **server/** — pure gRPC server (HTTP/2). `GET` it over HTTP won't work; it's
-  reached by the client over gRPC.
-- **client/** — `GET /` calls the server's `SayHello` over gRPC and returns the
-  reply as JSON. Target address from env `GREETER_ADDR` (+ `GREETER_TLS`).
+- **Dockerfile.server** → `python server.py`, gRPC server on `:50051`.
+- **Dockerfile.client** → `uvicorn app:app`, FastAPI HTTP + gRPC client on `:8000`.
 
-Each subdirectory is a self-contained service with its own `Dockerfile`, so on
-komuta you create **two services from this one repo**, each rooted at its
-subdirectory (`server/` and `client/`).
+Shared: `greeter.proto` + generated stubs (`greeter_pb2*.py`), union
+`requirements.txt`.
 
-## The question this probes
-Two **separately-deployed** repos could not reach each other (no internal DNS;
-public edge 403s gRPC). Do two services that live in the **same repo / project**
-get internal connectivity so the client can reach the server over gRPC?
+## Deploy on komuta
+Create **two services** from this one repo, both with build context = repo root,
+differing by the **Configuration file**:
+- service **server**: Configuration file = `Dockerfile.server` (port 50051)
+- service **client**: Configuration file = `Dockerfile.client` (port 8000), env
+  `GREETER_ADDR=<server-internal-addr>:50051`, `GREETER_TLS=false`
 
-## How to deploy
-1. Create service **server** from this repo, root path `server/`. Note its
-   address (internal hostname if shown).
-2. Create service **client** from this repo, root path `client/`. Set
-   `GREETER_ADDR` to the server's address (e.g. `<server-internal>:50051`,
-   `GREETER_TLS=false`).
-3. Open the client URL → `{"ok": true, "reply": "..."}` means gRPC worked.
+Deploy the server first, read its internal address, then point the client's
+`GREETER_ADDR` at it. `GET /` on the client → `{"ok": true, "reply": "..."}`
+means service-to-service gRPC worked.
 
 ## Local run
 ```bash
-# terminal 1
-cd server && pip install -r requirements.txt && PORT=50051 python server.py
-# terminal 2
-cd client && pip install -r requirements.txt && GREETER_ADDR=localhost:50051 uvicorn app:app --port 8000
+pip install -r requirements.txt
+PORT=50051 python server.py &
+GREETER_ADDR=localhost:50051 uvicorn app:app --port 8000
 curl localhost:8000/
 ```
