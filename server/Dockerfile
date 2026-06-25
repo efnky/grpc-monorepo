@@ -1,5 +1,3 @@
-# Build context = repo root (so server.py + stubs are always present).
-# Select this file as the service's "Configuration file" on the platform.
 FROM python:3.12-slim
 
 WORKDIR /app
